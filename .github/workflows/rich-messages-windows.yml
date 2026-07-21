@@ -1,0 +1,130 @@
+name: Rich Messages Windows x64
+
+on:
+  push:
+    branches:
+      - feature/rich-messages-port
+    paths:
+      - .github/workflows/rich-messages-windows.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 180
+
+    env:
+      REPO_NAME: AyuGramDesktop
+      PREPARE_PATH: Telegram/build/prepare/prepare.py
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Prepare directories
+        run: |
+          mkdir %userprofile%\TBuild\Libraries
+          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
+
+      - name: Clone integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/rich-messages-port
+          submodules: recursive
+          fetch-depth: 1
+          path: TBuild\AyuGramDesktop
+
+      - name: Resolve Windows SDK and cache key
+        shell: bash
+        run: |
+          DOCPATH="$TBUILD/$REPO_NAME/docs/building-win.md"
+          SDK="$(grep "SDK version" "$DOCPATH" | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          echo "SDK=$SDK" >> "$GITHUB_ENV"
+
+          sed -i '/CMAKE_${lang}_FLAGS_DEBUG_INIT/s/${_Zi}//' "$PROGRAMFILES"/CMake/share/cmake*/Modules/Platform/Windows-MSVC.cmake
+
+          {
+            sha256sum "$TBUILD/$REPO_NAME/$PREPARE_PATH"
+            echo "$SDK"
+          } > CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> "$GITHUB_ENV"
+
+      - name: Native Tools Command Prompt
+        uses: Eden-CI/msvc-dev-cmd@master
+        with:
+          arch: x64
+          sdk: ${{ env.SDK }}
+          toolset: 14.44
+
+      - name: Configure NuGet
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: Restore ThirdParty cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: Windows-x64-third-party-${{ env.CACHE_KEY }}
+          restore-keys: Windows-x64-third-party-
+
+      - name: Restore libraries cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: Windows-x64-libs-${{ env.CACHE_KEY }}
+          restore-keys: Windows-x64-libs-
+
+      - name: Restore Qt cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: Windows-x64-qt6-${{ env.CACHE_KEY }}
+          restore-keys: Windows-x64-qt6-
+
+      - name: Build dependencies
+        run: |
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-release silent qt6
+
+      - name: Configure and build AyuGram
+        run: |
+          cd %TBUILD%\%REPO_NAME%\Telegram
+
+          call configure.bat ^
+          x64 ^
+          qt6 ^
+          -D TDESKTOP_API_TEST=ON ^
+          -D CMAKE_CONFIGURATION_TYPES=Debug ^
+          -D CMAKE_COMPILE_WARNING_AS_ERROR=ON ^
+          -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
+          -D DESKTOP_APP_DISABLE_AUTOUPDATE=OFF ^
+          -D DESKTOP_APP_DISABLE_CRASH_REPORTS=OFF
+
+          cmake --build ..\out --config Debug --parallel
+
+      - name: Collect binaries
+        if: success()
+        run: |
+          mkdir artifact
+          move %TBUILD%\%REPO_NAME%\out\Debug\Telegram.exe artifact\
+          move %TBUILD%\%REPO_NAME%\out\Debug\Updater.exe artifact\
+
+      - name: Upload Windows build
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: AyuGram-Rich-Messages-Windows-x64
+          path: artifact\
