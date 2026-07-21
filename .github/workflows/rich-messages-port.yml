@@ -1,0 +1,66 @@
+name: Rich Messages Port
+
+on:
+  push:
+    branches:
+      - feature/rich-messages-port
+    paths:
+      - .github/workflows/rich-messages-port.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  analyze-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout AyuGram integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/rich-messages-port
+          fetch-depth: 0
+          submodules: false
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch Telegram Desktop 7.0.3
+        run: |
+          git remote remove telegramdesktop 2>/dev/null || true
+          git remote add telegramdesktop https://github.com/telegramdesktop/tdesktop.git
+          git fetch --no-tags telegramdesktop 19e221ed51ec441c16c26e1e013c056c00018584
+
+      - name: Analyze merge conflicts
+        id: merge
+        shell: bash
+        run: |
+          set +e
+          git merge --no-commit --no-ff 19e221ed51ec441c16c26e1e013c056c00018584
+          status=$?
+          {
+            echo "# AyuGram -> Telegram Desktop 7.0.3 merge report"
+            echo
+            echo "Merge exit code: $status"
+            echo
+            echo "## Conflicted files"
+            git diff --name-only --diff-filter=U | sort
+            echo
+            echo "## Conflict count"
+            git diff --name-only --diff-filter=U | wc -l
+          } | tee merge-conflicts.txt
+          git status --short | tee merge-status.txt
+          git merge --abort || true
+          exit 0
+
+      - name: Upload merge report
+        uses: actions/upload-artifact@v4
+        with:
+          name: rich-messages-merge-report
+          path: |
+            merge-conflicts.txt
+            merge-status.txt
+          if-no-files-found: error
