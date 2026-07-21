@@ -6,6 +6,13 @@ on:
       - feature/rich-messages-port
     paths:
       - .github/workflows/rich-messages-windows.yml
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/rich-messages-windows.yml
+      - .gitmodules
+      - Telegram/**
   workflow_dispatch:
 
 permissions:
