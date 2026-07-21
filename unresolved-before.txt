@@ -1,0 +1,11 @@
+.github/workflows/changelog.yml
+.github/workflows/docker.yml
+.github/workflows/linux.yml
+.github/workflows/mac.yml
+.github/workflows/mac_packaged.yml
+.github/workflows/snap.yml
+.github/workflows/win.yml
+Telegram/codegen
+Telegram/lib_tl
+Telegram/lib_ui
+snap/snapcraft.yaml
