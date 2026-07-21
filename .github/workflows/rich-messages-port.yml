@@ -58,12 +58,21 @@ jobs:
 
           while IFS= read -r file; do
             [ -n "$file" ] || continue
-            if git cat-file -e "$upstream:$file" 2>/dev/null; then
-              git checkout "$upstream" -- "$file"
+
+            if git ls-files -u -- "$file" | awk '$3 == 3 { found=1 } END { exit(found ? 0 : 1) }'; then
+              git checkout --theirs -- "$file" || git checkout "$upstream" -- "$file"
+              git add -- "$file"
             else
-              git rm -f -- "$file"
+              git rm -f --ignore-unmatch -- "$file"
             fi
           done < unresolved-before.txt
+
+          remaining="$(git diff --name-only --diff-filter=U)"
+          if [ -n "$remaining" ]; then
+            echo "Unresolved conflicts remain:" >&2
+            printf '%s\n' "$remaining" >&2
+            exit 1
+          fi
 
           git add -A
 
@@ -73,14 +82,14 @@ jobs:
           fi
 
           git commit -m "merge: port AyuGram to Telegram Desktop 7.0.3"
-          git push origin HEAD:feature/rich-messages-port
 
           {
             echo "Initial merge exit code: $merge_status"
-            echo "Remaining conflicts:"
-            git diff --name-only --diff-filter=U
+            echo "Remaining conflicts: 0"
             echo "Integrated commit: $(git rev-parse HEAD)"
           } | tee integration-result.txt
+
+          git push origin HEAD:feature/rich-messages-port
 
       - name: Upload integration report
         if: always()
