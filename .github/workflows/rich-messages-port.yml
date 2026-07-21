@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - feature/rich-messages-port
+    paths:
+      - .github/workflows/rich-messages-port.yml
   pull_request:
     branches:
       - dev
@@ -14,7 +16,7 @@ permissions:
   actions: read
 
 jobs:
-  analyze-merge:
+  integrate-upstream:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout AyuGram integration branch
@@ -23,6 +25,7 @@ jobs:
           ref: feature/rich-messages-port
           fetch-depth: 0
           submodules: false
+          persist-credentials: true
 
       - name: Configure Git
         run: |
@@ -35,33 +38,56 @@ jobs:
           git remote add telegramdesktop https://github.com/telegramdesktop/tdesktop.git
           git fetch --no-tags telegramdesktop 19e221ed51ec441c16c26e1e013c056c00018584
 
-      - name: Analyze merge conflicts
-        id: merge
+      - name: Merge upstream and resolve structural conflicts
         shell: bash
         run: |
-          set +e
-          git merge --no-commit --no-ff 19e221ed51ec441c16c26e1e013c056c00018584
-          status=$?
-          {
-            echo "# AyuGram -> Telegram Desktop 7.0.3 merge report"
-            echo
-            echo "Merge exit code: $status"
-            echo
-            echo "## Conflicted files"
-            git diff --name-only --diff-filter=U | sort
-            echo
-            echo "## Conflict count"
-            git diff --name-only --diff-filter=U | wc -l
-          } | tee merge-conflicts.txt
-          git status --short | tee merge-status.txt
-          git merge --abort || true
-          exit 0
+          set -euo pipefail
+          upstream=19e221ed51ec441c16c26e1e013c056c00018584
 
-      - name: Upload merge report
+          if git merge-base --is-ancestor "$upstream" HEAD; then
+            echo "Telegram Desktop 7.0.3 is already merged."
+            exit 0
+          fi
+
+          set +e
+          git merge --no-commit --no-ff -X theirs "$upstream"
+          merge_status=$?
+          set -e
+
+          git diff --name-only --diff-filter=U | sort | tee unresolved-before.txt
+
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            if git cat-file -e "$upstream:$file" 2>/dev/null; then
+              git checkout "$upstream" -- "$file"
+            else
+              git rm -f -- "$file"
+            fi
+          done < unresolved-before.txt
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No integration changes to commit."
+            exit 0
+          fi
+
+          git commit -m "merge: port AyuGram to Telegram Desktop 7.0.3"
+          git push origin HEAD:feature/rich-messages-port
+
+          {
+            echo "Initial merge exit code: $merge_status"
+            echo "Remaining conflicts:"
+            git diff --name-only --diff-filter=U
+            echo "Integrated commit: $(git rev-parse HEAD)"
+          } | tee integration-result.txt
+
+      - name: Upload integration report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rich-messages-merge-report
+          name: rich-messages-integration-report
           path: |
-            merge-conflicts.txt
-            merge-status.txt
-          if-no-files-found: error
+            unresolved-before.txt
+            integration-result.txt
+          if-no-files-found: ignore
