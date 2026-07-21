@@ -12,6 +12,7 @@ on:
     paths:
       - .github/workflows/rich-messages-windows.yml
       - .gitmodules
+      - docs/building-win.md
       - Telegram/**
   workflow_dispatch:
 
@@ -26,6 +27,7 @@ jobs:
     env:
       REPO_NAME: AyuGramDesktop
       PREPARE_PATH: Telegram/build/prepare/prepare.py
+      SDK: 10.0.26100.0
 
     defaults:
       run:
@@ -47,13 +49,9 @@ jobs:
           fetch-depth: 1
           path: TBuild\AyuGramDesktop
 
-      - name: Resolve Windows SDK and cache key
+      - name: Prepare cache key
         shell: bash
         run: |
-          DOCPATH="$TBUILD/$REPO_NAME/docs/building-win.md"
-          SDK="$(grep "SDK version" "$DOCPATH" | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
-          echo "SDK=$SDK" >> "$GITHUB_ENV"
-
           sed -i '/CMAKE_${lang}_FLAGS_DEBUG_INIT/s/${_Zi}//' "$PROGRAMFILES"/CMake/share/cmake*/Modules/Platform/Windows-MSVC.cmake
 
           {
