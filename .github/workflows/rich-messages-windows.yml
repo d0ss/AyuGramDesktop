@@ -1,4 +1,4 @@
-name: Rich Messages Windows x64
+name: Rich Messages Portable Windows x64
 
 on:
   push:
@@ -19,21 +19,37 @@ on:
 permissions:
   contents: read
 
+env:
+  REPO_NAME: AyuGramDesktop
+  PREPARE_PATH: Telegram/build/prepare/prepare.py
+  SDK: 10.0.26100.0
+  TDESKTOP_API_ID: ${{ secrets.TDESKTOP_API_ID }}
+  TDESKTOP_API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
+
 jobs:
-  build-windows-x64:
+  build-portable-windows-x64:
     runs-on: windows-latest
     timeout-minutes: 180
-
-    env:
-      REPO_NAME: AyuGramDesktop
-      PREPARE_PATH: Telegram/build/prepare/prepare.py
-      SDK: 10.0.26100.0
 
     defaults:
       run:
         shell: cmd
 
     steps:
+      - name: Validate Telegram API credentials
+        run: |
+          if "%TDESKTOP_API_ID%"=="" (
+            echo Missing repository secret TDESKTOP_API_ID.
+            echo Add it in Settings ^> Secrets and variables ^> Actions ^> New repository secret.
+            exit /b 2
+          )
+          if "%TDESKTOP_API_HASH%"=="" (
+            echo Missing repository secret TDESKTOP_API_HASH.
+            echo Add it in Settings ^> Secrets and variables ^> Actions ^> New repository secret.
+            exit /b 2
+          )
+          echo Telegram API credentials are present.
+
       - name: Prepare directories
         run: |
           mkdir %userprofile%\TBuild\Libraries
@@ -104,32 +120,55 @@ jobs:
         run: |
           %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-release silent qt6
 
-      - name: Configure and build AyuGram
+      - name: Configure and build AyuGram Release
         run: |
           cd %TBUILD%\%REPO_NAME%\Telegram
 
           call configure.bat ^
           x64 ^
           qt6 ^
-          -D TDESKTOP_API_TEST=ON ^
-          -D CMAKE_CONFIGURATION_TYPES=Debug ^
+          -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
+          -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
+          -D CMAKE_CONFIGURATION_TYPES=Release ^
           -D CMAKE_COMPILE_WARNING_AS_ERROR=ON ^
           -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
-          -D DESKTOP_APP_DISABLE_AUTOUPDATE=OFF ^
-          -D DESKTOP_APP_DISABLE_CRASH_REPORTS=OFF
+          -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
+          -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
 
-          cmake --build ..\out --config Debug --parallel
+          cmake --build ..\out --config Release --parallel
 
-      - name: Collect binaries
-        if: success()
+      - name: Assemble portable package
         run: |
-          mkdir artifact
-          move %TBUILD%\%REPO_NAME%\out\Debug\Telegram.exe artifact\
-          move %TBUILD%\%REPO_NAME%\out\Debug\Updater.exe artifact\
+          set OUT=%TBUILD%\%REPO_NAME%\out\Release
+          set PORTABLE=%GITHUB_WORKSPACE%\portable\AyuGram-RichMessages-Portable
 
-      - name: Upload Windows build
-        if: success()
+          mkdir "%PORTABLE%"
+          mkdir "%PORTABLE%\tdata"
+
+          if exist "%OUT%\AyuGram.exe" copy "%OUT%\AyuGram.exe" "%PORTABLE%\AyuGram.exe"
+          if not exist "%PORTABLE%\AyuGram.exe" if exist "%OUT%\Telegram.exe" copy "%OUT%\Telegram.exe" "%PORTABLE%\AyuGram.exe"
+          if exist "%OUT%\Updater.exe" copy "%OUT%\Updater.exe" "%PORTABLE%\Updater.exe"
+
+          echo @echo off> "%PORTABLE%\RUN_PORTABLE.bat"
+          echo cd /d "%%~dp0">> "%PORTABLE%\RUN_PORTABLE.bat"
+          echo start "" "%%~dp0AyuGram.exe" -workdir "%%~dp0tdata">> "%PORTABLE%\RUN_PORTABLE.bat"
+
+          echo AyuGram Desktop 7.0.3 Rich Messages Portable> "%PORTABLE%\README-PORTABLE.txt"
+          echo.>> "%PORTABLE%\README-PORTABLE.txt"
+          echo Запуск: RUN_PORTABLE.bat>> "%PORTABLE%\README-PORTABLE.txt"
+          echo Данные аккаунта лежат рядом в папке tdata и не смешиваются с обычным Telegram/AyuGram.>> "%PORTABLE%\README-PORTABLE.txt"
+          echo Автообновление и crash reports отключены на уровне сборки.>> "%PORTABLE%\README-PORTABLE.txt"
+          echo.>> "%PORTABLE%\README-PORTABLE.txt"
+          echo Проверить после входа: получение статьи, создание статьи, редактирование статьи, ghost mode, anti-recall, message history, filters.>> "%PORTABLE%\README-PORTABLE.txt"
+
+          if not exist "%PORTABLE%\AyuGram.exe" (
+            echo AyuGram executable was not found in build output.
+            dir "%OUT%"
+            exit /b 3
+          )
+
+      - name: Upload portable package
         uses: actions/upload-artifact@v7
         with:
-          name: AyuGram-Rich-Messages-Windows-x64
-          path: artifact\
+          name: AyuGram-RichMessages-Portable-Windows-x64
+          path: portable\AyuGram-RichMessages-Portable\
